@@ -1,0 +1,14 @@
+{application, erlmultipart,
+ [
+  {description, "Erlang Multipart Parsing"},
+  {vsn, "0.1"},
+  {modules, [
+             erlmultipart
+            ]},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.
