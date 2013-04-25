@@ -2,7 +2,7 @@
 
 -version(0.1).
 
--export([new/3,file_handler/4]).
+-export([new/3,file_handler/3]).
 -include_lib("eunit/include/eunit.hrl").
 
 new(Boundary, FileHandler, MaxSize) when is_binary(Boundary) ->
@@ -63,14 +63,14 @@ new(Boundary, FileHandler, MaxSize) when is_binary(Boundary) ->
                                             perror(<<"Invalid content disposition:">>, CD);
                                             
                                         {Name, undefined} ->
-                                            Result1 = {field, Name, undefined},
+                                            Result1 = [{type, field}, {name, Name}, {value, undefined}],
                                             parse(P, field, Rest, [Result1|Result]);
                                             
-                                        {Name, _Filename} ->
+                                        {Name, Filename} ->
                                             ContentType = proplists:get_value(<<"Content-Type">>, Headers),
-                                            State = FileHandler(start, <<>>, {Name, ContentType}, undefined),
-                                            Result1 = {file, Name, ContentType, State},
-                                            parse(P, file, Rest, [Result1|Result])
+                                            Result1 = [{type, file}, {name, Name}, {content_type, ContentType}, {original_filename, Filename}],
+                                            Result2 = FileHandler(start, <<>>, Result1),
+                                            parse(P, file, Rest, [Result2|Result])
                                     end;
                                     
                                 _ -> 
@@ -82,29 +82,28 @@ new(Boundary, FileHandler, MaxSize) when is_binary(Boundary) ->
             end;
         
         % parse a field - look for the next boundary, otherwise grow
-        (P, field, Buffer, Result=[{field,Name,_}|Results]) ->
+        (P, field, Buffer, R=[Result|Results]) ->
             case binary:split(Buffer,NextBoundary) of
                 [_] ->
-                    grow(P,field,Buffer,Result,MaxSize);
+                    grow(P,field,Buffer,R,MaxSize);
                 [Value,Rest] ->
                     %% form field complete
-                    parse(P,next,Rest,[{field,Name,Value}|Results])
+                    Result1 = orddict:store(value, Value, Result),
+                    parse(P,next,Rest,[Result1|Results])
             end;
         
         % parse a file
-        (P, file, Buffer, [{file,Filename,ContentType,State1}|Results]) ->
+        (P, file, Buffer, [Result|Results]) ->
             
             case binary:split(Buffer,NextBoundary) of
                 [_] ->
                     {Data, Rest} = consume(Buffer, NextBoundary),
-                    State2 = FileHandler(data, Data, {Filename, ContentType}, State1),
-                    Result = {file,Filename,ContentType,State2},
-                    grow(P,file,Rest,[Result|Results],MaxSize);
+                    Result1 = FileHandler(data, Data, Result),
+                    grow(P,file,Rest,[Result1|Results],MaxSize);
                 [Data,Rest] ->
-                    State2 = FileHandler(data, Data, {Filename, ContentType}, State1),
-                    State3 = FileHandler(done, <<>>, {Filename, ContentType}, State2),
-                    Result = {file,Filename,ContentType,State3},
-                    parse(P,next,Rest,[Result|Results])
+                    Result1 = FileHandler(data, Data, Result),
+                    Result2 = FileHandler(done, <<>>, Result1),
+                    parse(P,next,Rest,[Result2|Results])
             end
     end,
     
@@ -197,15 +196,20 @@ tmp_filename() ->
     N = node(),
     "/tmp/" ++ lists:flatten(io_lib:format("~p-~p.~p.~p",[N,A,B,C])).
     
-file_handler(start, _Buffer, _Info, _State) ->
-    Tmp = tmp_filename(),
-    {ok, File} = file:open(Tmp, [write]),
-    {Tmp,File};
+file_handler(start, _, Result) ->
+    Filename = tmp_filename(),
+    {ok, File} = file:open(Filename, [write]),
+    Result1 = orddict:store(filename, Filename, Result),
+    Result2 = orddict:store(file, File, Result1),
+    Result2;
     
-file_handler(data, Buffer, _Info, {Tmp,File}) ->
+file_handler(data, Buffer, Result) ->
+    File = orddict:fetch(file, Result),
     ok = file:write(File, Buffer),
-    {Tmp,File};
+    Result;
 
-file_handler(done, _Buffer, _Info, {Tmp,File}) ->
+file_handler(done, _, Result) ->
+    File = orddict:fetch(file, Result),
     ok = file:close(File),
-    Tmp.
+    orddict:erase(file, Result).
+    

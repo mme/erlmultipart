@@ -16,10 +16,16 @@ chunk_binary(Bin, Size, Chunks) ->
     Bin2 = binary:part(Bin, {Size, byte_size(Bin) - Size}),
     chunk_binary(Bin2, Size, Chunks ++ [Chunk] ).
 
-verify_simple_result({ok,[{field,<<"message">>,<<"Hello">>}]}) ->
+verify_simple_result({ok,[[{type,field},{name,<<"message">>},{value,<<"Hello">>}]]}) ->
     ok.
 
-verify_safari_result({ok,[{field,<<"field1">>,<<"Markus">>}, {file,<<"field2">>,<<"image/jpeg">>, _Filename}, {field,<<"submit">>,<<"submit">>}]}) ->
+verify_safari_result({ok,[[{type,field},{name,<<"field1">>},{value,<<"Markus">>}],
+             [{filename,_},
+              {type,file},
+              {name,<<"field2">>},
+              {content_type,<<"image/jpeg">>},
+              {original_filename,<<"testbild-sendepause.jpg">>}],
+             [{type,field},{name,<<"submit">>},{value,<<"submit">>}]]}) ->
     ok.
 
 safari_test_data() ->
@@ -27,16 +33,16 @@ safari_test_data() ->
     Data.
 
 test_chunked(Bin,Boundary,Size) ->
-    Parser = erlmultipart:new(Boundary, fun erlmultipart:file_handler/4, 12345),
+    Parser = erlmultipart:new(Boundary, fun erlmultipart:file_handler/3, 12345),
     Chunked = chunk_binary(Bin, Size, []),
     lists:foldl(fun(Chunk, {_, P}) -> P(Chunk) end, {more, Parser}, Chunked).
 
 simple_test() ->
-    Parser = erlmultipart:new(?SIMPLE_TEST_BOUNDARY, fun erlmultipart:file_handler/4, 12345),
+    Parser = erlmultipart:new(?SIMPLE_TEST_BOUNDARY, fun erlmultipart:file_handler/3, 12345),
     verify_simple_result(Parser(?SIMPLE_TEST_DATA)).
 
 safari_test() ->
-    Parser = erlmultipart:new(?SAFARI_TEST_BOUNDARY, fun erlmultipart:file_handler/4, 12345),
+    Parser = erlmultipart:new(?SAFARI_TEST_BOUNDARY, fun erlmultipart:file_handler/3, 12345),
     verify_safari_result(Parser(safari_test_data())).
 
 simple_chunked_1_test() ->
